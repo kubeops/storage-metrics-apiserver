@@ -1,8 +1,78 @@
-# Custom Metrics Adapter Server Boilerplate
+# storage-metrics-apiserver
 
-[![Go Reference](https://pkg.go.dev/badge/sigs.k8s.io/custom-metrics-apiserver.svg)](https://pkg.go.dev/sigs.k8s.io/custom-metrics-apiserver)
+This is a fork of [`kubernetes-sigs/custom-metrics-apiserver`](https://github.com/kubernetes-sigs/custom-metrics-apiserver)
+that adds **Kubernetes Storage Metrics Server** — a Custom Metrics API server
+exposing per-PVC capacity and usage metrics for storage autoscaling.
 
-## Purpose
+## What's added
+
+A standalone binary, `cmd/storage-metrics-apiserver`, that:
+
+- registers under `custom.metrics.k8s.io/v1beta2`
+- scrapes every node's kubelet `/stats/summary` endpoint on a configurable
+  interval (default 60s)
+- exposes the following metrics on the `persistentvolumeclaims` resource:
+  `volume_capacity_bytes`, `volume_available_bytes`, `volume_used_bytes`,
+  `volume_used_percentage` (milli units, 1000m == 100%), `volume_inodes`,
+  `volume_inodes_free`, `volume_inodes_used`, `volume_inodes_used_percentage`
+
+Because it reads from `/stats/summary` (rather than the CSI driver's
+`NodeGetVolumeStats`), it works for any volume kubelet mounts as a
+filesystem PVC — in-tree drivers, external CSI drivers, and migrated
+drivers — including older PVCs.
+
+### Architecture
+
+```
+pkg/storagemetrics/
+  storage/         in-memory cache (atomic batch swap, sync.RWMutex reader)
+  scraper/         goroutine fan-out per Node (staggered, like metrics-server)
+    client/        kubelet /stats/summary HTTP client + summary -> PVC batch
+  manager/         tick loop driving scrape -> store
+  provider/        custom_metrics.MetricsProvider over the cache
+  options/         kubelet client + scrape flags
+cmd/storage-metrics-apiserver/  main binary
+charts/storage-metrics-apiserver/  Helm chart
+manifests/storage-metrics-apiserver/  Kustomize bundle
+```
+
+### Scaling notes (large clusters)
+
+- The scraper uses the same staggering pattern as `metrics-server`
+  (random sleep up to `min(8 * nodeCount, 4000)` ms before each kubelet
+  request) to avoid network spikes on big clusters.
+- A dedicated `SharedInformerFactory` for Node and PVC objects keeps the
+  scrape loop independent of the apiserver lifecycle.
+- For PVCs mounted by multiple pods/nodes (RWX) the freshest sample wins,
+  so the cache always reflects the latest reading.
+- Memory is `O(PVCs in cluster)` — one `PVCMetricsPoint` per claim.
+
+### Install (Helm)
+
+```bash
+kubectl create namespace storage-metrics
+helm install storage-metrics-apiserver \
+  ./charts/storage-metrics-apiserver \
+  --namespace storage-metrics
+```
+
+### Install (kustomize)
+
+```bash
+kubectl apply -k manifests/storage-metrics-apiserver
+```
+
+### Query
+
+```bash
+kubectl get --raw \
+  "/apis/custom.metrics.k8s.io/v1beta2/namespaces/<ns>/persistentvolumeclaims/<pvc>/volume_used_percentage" \
+  | jq .
+```
+
+---
+
+## Original purpose (custom-metrics-apiserver library)
 
 This repository contains boilerplate code for setting up an implementation
 of the [Metrics APIs](https://github.com/kubernetes/metrics):
