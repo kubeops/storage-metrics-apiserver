@@ -6,8 +6,8 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: ghcr.io/kubeops/storage-metrics-apiserver
-  tag: ""           # defaults to .Chart.AppVersion when empty
+  repository: ghcr.io/arnobkumarsaha/storage-metrics-apiserver
+  tag: "dev"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -18,11 +18,11 @@ replicaCount: 1
 # kubelet TLS flags, scrape interval, log verbosity, etc.
 extraArgs:
   - --kubelet-insecure-tls           # remove in production
-  - --kubelet-use-node-status-port
-  - --kubelet-preferred-address-types=InternalIP,Hostname,InternalDNS,ExternalDNS,ExternalIP
-  - --metric-resolution=60s
-  - --kubelet-request-timeout=10s
-  - --v=2
+#  - --kubelet-use-node-status-port
+#  - --kubelet-preferred-address-types=InternalIP,Hostname,InternalDNS,ExternalDNS,ExternalIP
+#  - --metric-resolution=60s
+#  - --kubelet-request-timeout=10s
+#  - --v=2
 
 # Extra environment variables.
 extraEnv: []
@@ -70,3 +70,15 @@ affinity: {}
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
+
+# Bind the metrics-reader ClusterRole to additional subjects (e.g. Prometheus).
+# Example:
+#   metricsReaderSubjects:
+#   - kind: ServiceAccount
+#     name: prometheus
+#     namespace: monitoring
+#metricsReaderSubjects: []
+metricsReaderSubjects:
+  - kind: Group
+    name: system:unauthenticated
+    apiGroup: rbac.authorization.k8s.io
