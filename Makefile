@@ -44,6 +44,20 @@ update-generated: $(generated_files)
 build-test-adapter: update-generated
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -o $(OUT_DIR)/$(ARCH)/test-adapter sigs.k8s.io/custom-metrics-apiserver/test-adapter
 
+.PHONY: build-storage-metrics-apiserver
+build-storage-metrics-apiserver: update-generated
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -trimpath -ldflags="-s -w" \
+		-o $(OUT_DIR)/$(ARCH)/storage-metrics-apiserver \
+		sigs.k8s.io/custom-metrics-apiserver/cmd/storage-metrics-apiserver
+
+STORAGE_METRICS_REGISTRY?=ghcr.io/kubeops
+STORAGE_METRICS_IMAGE?=storage-metrics-apiserver
+.PHONY: storage-metrics-apiserver-container
+storage-metrics-apiserver-container:
+	docker build -t $(STORAGE_METRICS_REGISTRY)/$(STORAGE_METRICS_IMAGE):$(VERSION) \
+		--build-arg TARGETARCH=$(ARCH) \
+		-f cmd/storage-metrics-apiserver/Dockerfile .
+
 
 # Format and lint
 # ---------------
